@@ -11,6 +11,17 @@ const KEYS = {
   NOTIFICATIONS: 'nexabank_notifications',
   CURRENT_USER: 'nexabank_current_user',
   THEME: 'nexabank_theme',
+  PRINT_SETTINGS: 'nexabank_print_settings',
+}
+
+export type PrintSettings = {
+  bankTitle: string
+  footerNote: string
+}
+
+const DEFAULT_PRINT_SETTINGS: PrintSettings = {
+  bankTitle: 'NexaBank',
+  footerNote: 'Thank you for banking with NexaBank. This is a computer-generated receipt.',
 }
 
 const MAX_STORED_TRANSACTIONS = 400
@@ -197,6 +208,21 @@ export const saveCurrentUser = (user: User | null): void => {
 // Theme
 export const getTheme = (): string => localStorage.getItem(KEYS.THEME) || 'light'
 export const saveTheme = (theme: string): void => localStorage.setItem(KEYS.THEME, theme)
+
+// Print / bill receipt header & footer (System → Settings)
+export const getPrintSettings = (): PrintSettings => {
+  try {
+    const raw = localStorage.getItem(KEYS.PRINT_SETTINGS)
+    if (!raw) return { ...DEFAULT_PRINT_SETTINGS }
+    return { ...DEFAULT_PRINT_SETTINGS, ...JSON.parse(raw) }
+  } catch {
+    return { ...DEFAULT_PRINT_SETTINGS }
+  }
+}
+
+export const savePrintSettings = (settings: PrintSettings): void => {
+  setRaw(KEYS.PRINT_SETTINGS, JSON.stringify(settings))
+}
 
 // Clear all data
 export const clearAll = (): void => {

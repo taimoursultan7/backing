@@ -8,6 +8,8 @@ import {
   getTransactions, saveTransactions,
   getUsers, saveUsers,
   getNotifications, saveNotifications,
+  getPrintSettings,
+  type PrintSettings,
 } from './storage';
 
 // ─── ID Generators ───────────────────────────────────────────
@@ -519,6 +521,94 @@ export function getMonthlyStats() {
     result.push({ label, ...(months[key] || { deposits: 0, withdrawals: 0, transfers: 0 }) });
   }
   return result;
+}
+
+// ─── Print / Bills ────────────────────────────────────────────
+const BILL_DESCRIPTION_PATTERN =
+  /bill|utility|rent|fee|tax|tuition|maintenance|supplier|operating|medical|grocery/i
+
+export const isBillPaymentTransaction = (transaction: Transaction): boolean =>
+  BILL_DESCRIPTION_PATTERN.test(transaction.description)
+
+const openPrintDocument = (html: string): boolean => {
+  const win = window.open('', '_blank', 'noopener,noreferrer')
+  if (!win) return false
+  win.document.write(html)
+  win.document.close()
+  win.focus()
+  win.print()
+  return true
+}
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+
+const printStyles = `
+  body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
+  h1 { color: #1a56db; margin: 0 0 0.25rem; font-size: 1.5rem; }
+  .muted { color: #666; font-size: 0.85rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th { background: #1a56db; color: white; padding: 8px; text-align: left; font-size: 12px; }
+  td { padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px; }
+  tr:nth-child(even) { background: #f8f9fa; }
+  .header { display: flex; justify-content: space-between; margin-bottom: 1.25rem; }
+  .amount { font-size: 1.75rem; font-weight: 800; color: #1a56db; text-align: center; margin: 1rem 0; }
+  .row { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.9rem; }
+  .footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #ccc; font-size: 0.8rem; color: #666; text-align: center; }
+`
+
+export function printTransactionReceipt(
+  transaction: Transaction,
+  settings: PrintSettings = getPrintSettings(),
+): void {
+  const rows: [string, string][] = [
+    ['Transaction ID', transaction.transactionId],
+    ['Type', transaction.type.toUpperCase()],
+    ['Account', transaction.accountNumber],
+    ...(transaction.toAccount ? [['To Account', transaction.toAccount] as [string, string]] : []),
+    ['Description', transaction.description],
+    ['Amount', formatCurrency(transaction.amount)],
+    ['Balance Before', formatCurrency(transaction.balanceBefore)],
+    ['Balance After', formatCurrency(transaction.balanceAfter)],
+    ['Status', transaction.status.toUpperCase()],
+    ['Date & Time', formatDateTime(transaction.createdAt)],
+  ]
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(settings.bankTitle)} Receipt</title><style>${printStyles}</style></head><body>
+    <div class="header">
+      <div><h1>${escapeHtml(settings.bankTitle)}</h1><p class="muted">Transaction / Bill Receipt</p></div>
+      <div class="muted" style="text-align:right">Printed: ${escapeHtml(new Date().toLocaleString())}</div>
+    </div>
+    <div class="amount">${escapeHtml(formatCurrency(transaction.amount))}</div>
+    ${rows.map(([label, value]) => `<div class="row"><span class="muted">${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}
+    <div class="footer">${escapeHtml(settings.footerNote)}</div>
+  </body></html>`
+
+  openPrintDocument(html)
+}
+
+export function printTransactionsStatement(
+  transactions: Transaction[],
+  title: string,
+  subtitle?: string,
+  settings: PrintSettings = getPrintSettings(),
+): void {
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${printStyles}</style></head><body>
+    <div class="header">
+      <div><h1>${escapeHtml(settings.bankTitle)}</h1><p class="muted">${escapeHtml(title)}</p>${subtitle ? `<p class="muted">${escapeHtml(subtitle)}</p>` : ''}</div>
+      <div class="muted" style="text-align:right"><p>Generated: ${escapeHtml(new Date().toLocaleString())}</p><p>Records: ${transactions.length}</p></div>
+    </div>
+    <table><thead><tr><th>Transaction ID</th><th>Type</th><th>Amount</th><th>Account</th><th>Description</th><th>Date</th><th>Status</th></tr></thead>
+    <tbody>${transactions.map(t => `<tr><td>${escapeHtml(t.transactionId)}</td><td>${escapeHtml(t.type.toUpperCase())}</td><td>${escapeHtml(formatCurrency(t.amount))}</td><td>${escapeHtml(t.accountNumber)}</td><td>${escapeHtml(t.description)}</td><td>${escapeHtml(formatDateTime(t.createdAt))}</td><td>${escapeHtml(t.status.toUpperCase())}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="footer">${escapeHtml(settings.footerNote)}</div>
+  </body></html>`
+
+  openPrintDocument(html)
 }
 
 // ─── CSV Export ───────────────────────────────────────────────

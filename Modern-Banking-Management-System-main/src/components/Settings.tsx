@@ -2,10 +2,17 @@
 // Settings & Profile Component
 // ============================================================
 
-import React, { useState, useRef } from 'react';
-import { User, ThemeMode } from '../types';
-import { getUsers, saveUsers, saveCurrentUser } from '../utils/storage';
-import { compressProfileImage } from '../utils/helpers';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { User, ThemeMode, Transaction } from '../types';
+import { getUsers, saveUsers, saveCurrentUser, getPrintSettings, savePrintSettings, getTransactions } from '../utils/storage';
+import {
+  compressProfileImage,
+  formatCurrency,
+  formatDateTime,
+  isBillPaymentTransaction,
+  printTransactionReceipt,
+  printTransactionsStatement,
+} from '../utils/helpers';
 import { ToastData } from './Toast';
 
 interface SettingsProps {
@@ -26,7 +33,68 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, theme, onThemeToggle, 
   const [confirmPass, setConfirmPass] = useState('');
   const [showOld, setShowOld] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [printBankTitle, setPrintBankTitle] = useState(getPrintSettings().bankTitle);
+  const [printFooterNote, setPrintFooterNote] = useState(getPrintSettings().footerNote);
+  const [billFilter, setBillFilter] = useState<'bills' | 'all'>('bills');
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (activeTab === 'printing') {
+      setTransactions(getTransactions());
+      const settings = getPrintSettings();
+      setPrintBankTitle(settings.bankTitle);
+      setPrintFooterNote(settings.footerNote);
+    }
+  }, [activeTab]);
+
+  const printSettings = useMemo(
+    () => ({ bankTitle: printBankTitle.trim() || 'NexaBank', footerNote: printFooterNote.trim() }),
+    [printBankTitle, printFooterNote],
+  );
+
+  const printableTransactions = useMemo(() => {
+    const sorted = [...transactions].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    const list =
+      billFilter === 'bills' ? sorted.filter(isBillPaymentTransaction) : sorted;
+    return list.slice(0, 25);
+  }, [transactions, billFilter]);
+
+  const handleSavePrintSettings = () => {
+    savePrintSettings(printSettings);
+    showToast({ type: 'success', title: 'Saved', message: 'Print settings updated for all receipts.' });
+  };
+
+  const handlePrintReceipt = (transaction: Transaction) => {
+    printTransactionReceipt(transaction, printSettings);
+    showToast({ type: 'info', title: 'Print', message: 'Receipt sent to your printer dialog.' });
+  };
+
+  const handlePrintBillBatch = () => {
+    if (printableTransactions.length === 0) {
+      showToast({ type: 'warning', title: 'No records', message: 'No transactions match this filter.' });
+      return;
+    }
+    printTransactionsStatement(
+      printableTransactions,
+      billFilter === 'bills' ? 'Bill & Utility Payments' : 'Recent Transactions',
+      `Showing ${printableTransactions.length} record(s)`,
+      printSettings,
+    );
+  };
+
+  const handlePrintMiniStatement = () => {
+    const mini = [...transactions]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 10);
+    if (mini.length === 0) {
+      showToast({ type: 'warning', title: 'No records', message: 'No transactions to print.' });
+      return;
+    }
+    printTransactionsStatement(mini, 'Mini Statement', 'Last 10 transactions', printSettings);
+  };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -73,6 +141,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, theme, onThemeToggle, 
   const tabs = [
     { id: 'profile', label: 'My Profile', icon: 'bi-person-fill' },
     { id: 'security', label: 'Security', icon: 'bi-shield-lock-fill' },
+    { id: 'printing', label: 'Bills & Print', icon: 'bi-printer-fill' },
     { id: 'appearance', label: 'Appearance', icon: 'bi-palette-fill' },
     { id: 'about', label: 'About', icon: 'bi-info-circle-fill' },
   ];
@@ -218,6 +287,118 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, theme, onThemeToggle, 
                       <span style={{ fontSize: '0.8rem', color: item.color, fontWeight: 700 }}>{item.value}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bills & Print (System) */}
+          {activeTab === 'printing' && (
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title"><i className="bi bi-printer-fill"></i> Bills & Print</div>
+              </div>
+              <div className="card-body">
+                <p style={{ marginBottom: '1.25rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                  Print transaction receipts, utility bills, and mini statements from System settings.
+                </p>
+
+                <h4 style={{ fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>Receipt header</h4>
+                <div style={{ display: 'grid', gap: '1rem', maxWidth: 520, marginBottom: '1.5rem' }}>
+                  <div className="form-field">
+                    <label className="field-label">Bank title on printouts</label>
+                    <input
+                      className="field-input"
+                      value={printBankTitle}
+                      onChange={e => setPrintBankTitle(e.target.value)}
+                      placeholder="NexaBank"
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label className="field-label">Footer note</label>
+                    <textarea
+                      className="field-input"
+                      rows={2}
+                      value={printFooterNote}
+                      onChange={e => setPrintFooterNote(e.target.value)}
+                      placeholder="Thank you message on receipts"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ alignSelf: 'flex-start' }}
+                    onClick={handleSavePrintSettings}
+                  >
+                    <i className="bi bi-check2-all"></i> Save print settings
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={handlePrintBillBatch}>
+                    <i className="bi bi-printer-fill"></i> Print list
+                  </button>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={handlePrintMiniStatement}>
+                    <i className="bi bi-receipt"></i> Print mini statement
+                  </button>
+                </div>
+
+                <div className="section-tabs" style={{ marginBottom: '1rem' }}>
+                  {([
+                    { id: 'bills' as const, label: 'Bills & utilities' },
+                    { id: 'all' as const, label: 'All recent' },
+                  ]).map(option => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`section-tab ${billFilter === option.id ? 'active' : ''}`}
+                      onClick={() => setBillFilter(option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printableTransactions.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}>
+                            No transactions to show. Try &quot;All recent&quot; or add transactions in Banking.
+                          </td>
+                        </tr>
+                      ) : (
+                        printableTransactions.map(txn => (
+                          <tr key={txn.id}>
+                            <td className="font-mono" style={{ fontSize: '0.8rem' }}>{txn.transactionId}</td>
+                            <td>{txn.description}</td>
+                            <td>{formatCurrency(txn.amount)}</td>
+                            <td style={{ fontSize: '0.8rem' }}>{formatDateTime(txn.createdAt)}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                aria-label={`Print receipt for ${txn.transactionId}`}
+                                onClick={() => handlePrintReceipt(txn)}
+                              >
+                                <i className="bi bi-printer"></i> Print
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

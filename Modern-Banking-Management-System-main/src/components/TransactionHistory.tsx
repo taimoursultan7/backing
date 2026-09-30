@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { Transaction } from '../types';
 import { getTransactions } from '../utils/storage';
-import { formatCurrency, formatDateTime, exportTransactionsCSV } from '../utils/helpers';
+import { formatCurrency, formatDateTime, exportTransactionsCSV, printTransactionsStatement } from '../utils/helpers';
 import { ToastData } from './Toast';
 
 interface TransactionHistoryProps {
@@ -46,27 +46,8 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ showToast }) =>
   const clearFilters = () => { setSearch(''); setTypeFilter('all'); setDateFrom(''); setDateTo(''); setPage(1); };
 
   const printStatement = () => {
-    const content = `
-      <html><head><title>NexaBank — Transaction Statement</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        h1 { color: #1a56db; } table { width: 100%; border-collapse: collapse; }
-        th { background: #1a56db; color: white; padding: 8px; text-align: left; }
-        td { padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px; }
-        tr:nth-child(even) { background: #f8f9fa; }
-        .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
-      </style></head><body>
-      <div class="header">
-        <div><h1>🏦 NexaBank</h1><p>Transaction Statement</p></div>
-        <div style="text-align:right"><p>Generated: ${new Date().toLocaleString()}</p><p>Total Records: ${filtered.length}</p></div>
-      </div>
-      <table><thead><tr><th>Transaction ID</th><th>Type</th><th>Amount</th><th>Account</th><th>Description</th><th>Date & Time</th><th>Status</th></tr></thead>
-      <tbody>${filtered.map(t => `<tr><td>${t.transactionId}</td><td>${t.type.toUpperCase()}</td><td>PKR ${t.amount.toFixed(2)}</td><td>${t.accountNumber}</td><td>${t.description}</td><td>${formatDateTime(t.createdAt)}</td><td>${t.status.toUpperCase()}</td></tr>`).join('')}
-      </tbody></table></body></html>
-    `;
-    const win = window.open('', '_blank');
-    if (win) { win.document.write(content); win.document.close(); win.print(); }
-  };
+    printTransactionsStatement(filtered, 'Transaction Statement', 'Complete filtered history')
+  }
 
   return (
     <div>
